@@ -1,10 +1,10 @@
 # Windows-Tools
     
-    Various tools to configure the Windows 10/11 OS.
+Various tools to configure the Windows 10/11 OS.
 
   #### Consolas.reg
   
-    Consolas default font in Windows
+    Sets Consolas as default font in Windows
 
 
 
