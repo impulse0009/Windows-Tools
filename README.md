@@ -2,7 +2,16 @@
 Various tools to configure the Windows 10/11 OS.
 
 
-| Toggle Nvidia Container Background Service(s).ps1 |
-- Toggles Nvidia Container Service On/Off
-- Friendly UI
-- Error Logging
+
+  
+Consolas.reg
+  
+    - Consolas default font in Windows
+
+
+
+Toggle Nvidia Container Background Service(s).ps1
+  
+    - Toggles Nvidia Container Service
+    - Friendly UI
+    - Error Logging
