@@ -1,53 +1,86 @@
 #Requires -RunAsAdministrator
 
-<#
-.SYNOPSIS
-    Toggles the NVIDIA Display Container LS service.
-.DESCRIPTION
-    This script enables or disables the NVIDIA Display Container LS service,
-    which affects the NVIDIA Control Panel functionality.
+<#!
+Quick Rundown;
+//
+    Problem?
+        Troublesome CPU spikes caused by services while gaming >:(
+    Solution!
+        Band-Aid the situation by Disabling the services :D
+//
+What is covered;
+    Services.
+        "NVDisplay.ContainerLocalSystem"
+        "NvContainerLocalSystem"
+    Functions.
+        Nvidia Control Panel
+        Nvidia App
+        Other Nvidia-ey things for GPU, Windows, Display, etc
+//
+What this does;
+    Script.
+        Toggle service running states to opposite state (Enable or Disable)
+    Disclaimer.
+        DOES NOT affect startup states
+        ONLY toggles active running states on + off when run
+//
+Future Revisions;
+    Brevity.
+        functions
+        variables
+        comments
+        console text output
+        logs
+        others?
+    Include More?
+        services/ modules/ backend supplementary apps
+        others?
+    Layout.
+        background + text color formatting?
+        custom arguments/parameters for granularity?
+        better defined variables!!!
+        rearange and find better ways to compartmentalize by type
+        prevent errors
+        error checking
+    Permissions.
+        not brute force/ required perms only
 #>
 
-$serviceName = "NVDisplay.ContainerLocalSystem"
-$logFile = $PSCommandPath -replace '\.ps1$', '.log'
+# Service names and log location
+$serviceNames = @(
+    'NVDisplay.ContainerLocalSystem',
+    'NvContainerLocalSystem'
+)
+$logFile = "$PSScriptRoot\toggle-nvidia-services.log"
 
-# Log messages to file and console
+# Get date and time for log file entries
 function Write-LogMessage {
     param([string]$Message)
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "$timestamp - $Message" | Add-Content -Path $logFile
-    Write-Verbose $Message
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    "$ts - $Message" | Add-Content -Path $logFile -Force
 }
 
-# Wait for user to press a key
 function Wait-ForKeyPress {
-    param([string]$Message)
-    Write-Host $Message
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    param([string]$Prompt)
+    Write-Host $Prompt
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
 }
 
-# Get current state of NVIDIA service
 function Get-NvidiaServiceState {
+    param([string]$Name)
     try {
-        $service = Get-Service -Name $serviceName -ErrorAction Stop
-        return @{
-            IsRunning = $service.Status -eq 'Running'
-            IsAutomatic = $service.StartType -eq 'Automatic'
-            Service = $service
-        }
+        $svc = Get-Service -Name $Name -ErrorAction Stop
+        return @{ Name = $Name; Service = $svc; IsRunning = ($svc.Status -eq 'Running'); IsAutomatic = ($svc.StartType -eq 'Automatic') }
     }
     catch {
-        Write-LogMessage "Error: Couldn't find the $serviceName service."
+        Write-LogMessage "Error: Couldn't find the $Name service."
         throw
     }
 }
 
-# Wait for service to reach desired status
 function Wait-ForServiceStatus {
     param(
-        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
         [System.ServiceProcess.ServiceController]$Service,
-        [Parameter(Mandatory=$true)]
         [string]$DesiredStatus,
         [int]$TimeoutSeconds = 5
     )
@@ -56,88 +89,86 @@ function Wait-ForServiceStatus {
         return $true
     }
     catch {
-        Write-LogMessage "Service didn't reach $DesiredStatus status within $TimeoutSeconds seconds."
+        Write-LogMessage "Service $($Service.Name) didn't reach $DesiredStatus within $TimeoutSeconds seconds."
         return $false
     }
 }
 
-# Toggle NVIDIA service state
 function Set-NvidiaServiceState {
     param(
-        [Parameter(Mandatory=$true)]
-        [ValidateSet('Enable', 'Disable')]
-        [string]$Action,
+        [string]$Name,
+        [ValidateSet('Enable','Disable')][string]$Action,
         [hashtable]$State
     )
-
-    Write-LogMessage "Trying to $Action the $serviceName service..."
-
+    Write-LogMessage "Trying to $Action the $Name service..."
     try {
         if ($Action -eq 'Disable') {
-            Set-Service -Name $serviceName -StartupType Disabled -ErrorAction Stop
+            Set-Service -Name $Name -StartupType Disabled -ErrorAction Stop
             $State.Service | Stop-Service -Force -ErrorAction Stop
-            if (-not (Wait-ForServiceStatus -Service $State.Service -DesiredStatus 'Stopped')) {
-                throw "Couldn't stop service with PowerShell"
-            }
+            if (-not (Wait-ForServiceStatus -Service $State.Service -DesiredStatus 'Stopped')) { throw "Couldn't stop service with PowerShell" }
         } else {
-            Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
+            Set-Service -Name $Name -StartupType Automatic -ErrorAction Stop
             $State.Service | Start-Service -ErrorAction Stop
-            if (-not (Wait-ForServiceStatus -Service $State.Service -DesiredStatus 'Running')) {
-                throw "Couldn't start service with PowerShell"
-            }
+            if (-not (Wait-ForServiceStatus -Service $State.Service -DesiredStatus 'Running')) { throw "Couldn't start service with PowerShell" }
         }
     }
     catch {
         Write-LogMessage "PowerShell command failed: $_. Trying CMD as fallback."
         $cmdAction = if ($Action -eq 'Disable') { 'stop' } else { 'start' }
         try {
-            $null = & cmd /c sc $cmdAction $serviceName
-            if ($LASTEXITCODE -ne 0) {
-                throw "CMD command failed with exit code $LASTEXITCODE"
-            }
+            $null = & cmd /c sc $cmdAction $Name
+            if ($LASTEXITCODE -ne 0) { throw "CMD command failed with exit code $LASTEXITCODE" }
         }
         catch {
             Write-LogMessage "Couldn't $Action the service using CMD fallback: $_"
             return $false
         }
     }
-    finally {
-        $State.Service.Refresh()
-    }
-
-    Write-LogMessage "Service ${Action}d successfully."
+    finally { $State.Service.Refresh() | Out-Null }
+    Write-LogMessage "Service $Name ${Action}d successfully."
     return $true
 }
 
-# Main script
+# --- main ----------------------------------------------------------------
 try {
-    Write-LogMessage "Script started."
-    Write-Host @"
-This script toggles the NVIDIA Display Container LS service.
-Disabling it will turn off the NVIDIA Control Panel.
-Enabling it will turn on the NVIDIA Control Panel.
-"@
+    Write-LogMessage 'Script started.'
 
-    Wait-ForKeyPress "Press any key to continue..."
-
-    Clear-Host
-    Write-Host "Working on it..."
-
-    $state = Get-NvidiaServiceState
-    $action = if ($state.IsRunning -and $state.IsAutomatic) { 'Disable' } else { 'Enable' }
-
-    $result = Set-NvidiaServiceState -Action $action -State $state
-
-    if ($result) {
-        Write-Host "All done! The service is now $($action)d."
-    } else {
-        Write-Host "Oops, something went wrong. Check the log file for more info."
+    # Console intro with dynamic current running state for both services
+    Write-Host 'Toggle these NVIDIA background services together:'
+    Write-Host ''
+    foreach ($name in $serviceNames) {
+        $st = Get-NvidiaServiceState -Name $name
+        $stateText = if ($st.IsRunning) { 'Enabled' } else { 'Disabled' }
+        Write-Host "$($st.Name) - Is Currently $stateText"
     }
+    Write-Host ''
+    Write-Host 'Disable= You CANNOT use Nvidia Control Panel + Nvidia App >:('
+    Write-Host ''
+    Write-Host 'Enable= You CAN use Nvidia Control Panel + Nvidia App :)'
+    Write-Host ''
+    Wait-ForKeyPress 'Press any key to continue...'
+    Clear-Host
+    Write-Host 'Toggling Running States...'
+
+    # Toggle running state of both services 
+    # Enabled goes to Disabled
+    # Disabled goes to Enabled
+    $firstState = Get-NvidiaServiceState -Name $serviceNames[0]
+    $action = if ($firstState.IsRunning -and $firstState.IsAutomatic) { 'Disable' } else { 'Enable' }
+
+    $allOk = $true
+    foreach ($svcName in $serviceNames) {
+        $state = Get-NvidiaServiceState -Name $svcName
+        if (-not (Set-NvidiaServiceState -Name $svcName -Action $action -State $state)) { $allOk = $false; break }
+    }
+
+    if ($allOk) { Write-Host "All done! Services are now $action`d." } 
+    else       { Write-Host 'Oops, something went wrong. Check the log, located next to script file location, for details.' -ForegroundColor Red }
 }
 catch {
     Write-LogMessage "Unexpected error: $_"
-    Write-Host "Unexpected error occurred. Check the log file for details."
+    Write-Host 'Unexpected error >:( occurred. Check the log file for details.' -ForegroundColor Red
 }
 finally {
-    Wait-ForKeyPress "Press any key to exit..."
+    Wait-ForKeyPress 'Press any key to exit...'
 }
